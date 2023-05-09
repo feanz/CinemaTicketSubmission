@@ -21,9 +21,8 @@ export default class TicketService {
     //2. That the purchase rules outlined in the test apply to all the TicketTypeRequest in the ticketTypeRequests array
     //    as a whole not per request object.
 
-    //create a reservation
+    //create a reservation object that will validate our request and calculate the price and seat count
     var seatReservation = new SeatReservation(accountId, ...ticketTypeRequests);
-    seatReservation.validate();
 
     //make payment
     var paymentService = new TicketPaymentService();
@@ -35,8 +34,14 @@ export default class TicketService {
 
     return seatReservation;
   }
+}
 
-  validateRequest(accountId, ticketTypeRequests) {
+class SeatReservation {
+  #countByTicketType = new Map();
+  #price = 0;
+  #seatCount = 0;
+
+  constructor(accountId, ...ticketTypeRequests) {
     if (!Number.isInteger(accountId) || accountId < 1) {
       throw new InvalidPurchaseException("accountId must be an integer greater than 0");
     }
@@ -44,9 +49,25 @@ export default class TicketService {
     if (ticketTypeRequests === undefined || ticketTypeRequests.length === 0) {
       throw new InvalidPurchaseException("Must have at least one TicketTypeRequest");
     }
+
+    const ticketTypeDetails = this.#buildTicketTypeDetails();
+    this.#countByTicketType = this.#getCountByTicketType(ticketTypeRequests);
+
+    this.#price = this.#calculatePrice(ticketTypeDetails);
+    this.#seatCount = this.#calculateSeatCount(ticketTypeDetails);
+
+    this.#validate();
   }
 
-  getTicketTypeDetails() {
+  getPrice() {
+    return this.#price;
+  }
+
+  getSeatCount() {
+    return this.#seatCount;
+  }
+
+  #buildTicketTypeDetails() {
     //create a map of ticket type to price and whether it requires a seat, this could be injection or loaded from config but its static for this example
     const ticketTypeDetails = new Map();
     ticketTypeDetails.set(TicketType.Adult, {
@@ -61,20 +82,11 @@ export default class TicketService {
       price: 0,
       requiresSeat: false,
     });
+
+    return ticketTypeDetails;
   }
 
-  buildReservationSummary(ticketTypeRequests) {
-    const countByTicketType = this.getCountByTicketType(ticketTypeRequests);
-    const seatCount = this.getSeatCount(countByTicketType);
-    const price = this.getPrice(countByTicketType);
-    return {
-      countByTicketType,
-      seatCount,
-      price,
-    };
-  }
-
-  getCountByTicketType(ticketTypeRequests) {
+  #getCountByTicketType(ticketTypeRequests) {
     const countByTicketType = ticketTypeRequests.reduce((accumulator, currentValue) => {
       const ticketType = currentValue.getTicketType();
       let currentCountForTicketType = accumulator.get(ticketType);
@@ -90,9 +102,14 @@ export default class TicketService {
     return countByTicketType;
   }
 
-  getSeatCount(countByTicketType) {
+  #getCount(ticketType) {
+    const typeCount = this.#countByTicketType.get(ticketType);
+    return typeCount === undefined ? 0 : typeCount;
+  }
+
+  #calculateSeatCount(ticketTypeDetails) {
     let seatCount = 0;
-    countByTicketType.forEach((count, ticketType) => {
+    this.#countByTicketType.forEach((count, ticketType) => {
       if (ticketTypeDetails.get(ticketType).requiresSeat) {
         seatCount += count;
       }
@@ -100,100 +117,15 @@ export default class TicketService {
     return seatCount;
   }
 
-  getPrice(countByTicketType) {
+  #calculatePrice(ticketTypeDetails) {
     let price = 0;
-    countByTicketType.forEach((count, ticketType) => {
+    this.#countByTicketType.forEach((count, ticketType) => {
       price += count * ticketTypeDetails.get(ticketType).price;
     });
     return price;
   }
 
-  validateReservationSummary(reservationSummary) {
-    if (reservationSummary.seatCount > 20) {
-      throw new InvalidPurchaseException("Only 20 tickets can be purchased at a time");
-    }
-
-    //validate that there is at least one adult seat if there are child and infant seats
-    if (this.getCount(TicketType.Child) + this.getCount(TicketType.Infant) > 0 && this.getCount(TicketType.Adult) < 1) {
-      throw new InvalidPurchaseException("There must be at least one adult seat if there are child or infant seats");
-    }
-
-    //validate that there are as many infants seats request as there are adults seats requested
-    if (this.getCount(TicketType.Infant) > this.getCount(TicketType.Adult)) {
-      throw new InvalidPurchaseException("There must be as many adult seats as there are infant seats requested");
-    }
-  }
-}
-
-class SeatReservation {
-  #ticketTypeDetails = new Map();
-  #countByTicketType = new Map();
-
-  constructor(accountId, ...ticketTypeRequests) {
-    if (!Number.isInteger(accountId) || accountId < 1) {
-      throw new InvalidPurchaseException("accountId must be an integer greater than 0");
-    }
-
-    if (ticketTypeRequests === undefined || ticketTypeRequests.length === 0) {
-      throw new InvalidPurchaseException("Must have at least one TicketTypeRequest");
-    }
-
-    this.accountId = accountId;
-    this.ticketTypeRequests = ticketTypeRequests;
-
-    //create a map of ticket type to price and whether it requires a seat
-    this.#ticketTypeDetails.set(TicketType.Adult, {
-      price: 20,
-      requiresSeat: true,
-    });
-    this.#ticketTypeDetails.set(TicketType.Child, {
-      price: 10,
-      requiresSeat: true,
-    });
-    this.#ticketTypeDetails.set(TicketType.Infant, {
-      price: 0,
-      requiresSeat: false,
-    });
-
-    this.#countByTicketType = ticketTypeRequests.reduce((accumulator, currentValue) => {
-      const ticketType = currentValue.getTicketType();
-      let currentCountForTicketType = accumulator.get(ticketType);
-      if (currentCountForTicketType === undefined) {
-        currentCountForTicketType = currentValue.getNoOfTickets();
-      } else {
-        currentCountForTicketType += currentValue.getNoOfTickets();
-      }
-      accumulator.set(ticketType, currentCountForTicketType);
-      return accumulator;
-    }, new Map());
-
-    this.validate();
-  }
-
-  getCount(ticketType) {
-    const typeCount = this.#countByTicketType.get(ticketType);
-    return typeCount === undefined ? 0 : typeCount;
-  }
-
-  getSeatCount() {
-    let seatCount = 0;
-    this.#countByTicketType.forEach((count, ticketType) => {
-      if (this.#ticketTypeDetails.get(ticketType).requiresSeat) {
-        seatCount += count;
-      }
-    });
-    return seatCount;
-  }
-
-  getPrice() {
-    let price = 0;
-    this.#countByTicketType.forEach((count, ticketType) => {
-      price += count * this.#ticketTypeDetails.get(ticketType).price;
-    });
-    return price;
-  }
-
-  validate() {
+  #validate() {
     //validate that only 20 tickets can be purchased at a time.  I assume that means per request to
     //the purchaseTickets method not
     if (this.getSeatCount() > 20) {
@@ -201,12 +133,15 @@ class SeatReservation {
     }
 
     //validate that there is at least one adult seat if there are child and infant seats
-    if (this.getCount(TicketType.Child) + this.getCount(TicketType.Infant) > 0 && this.getCount(TicketType.Adult) < 1) {
+    if (
+      this.#getCount(TicketType.Child) + this.#getCount(TicketType.Infant) > 0 &&
+      this.#getCount(TicketType.Adult) < 1
+    ) {
       throw new InvalidPurchaseException("There must be at least one adult seat if there are child or infant seats");
     }
 
     //validate that there are as many infants seats request as there are adults seats requested
-    if (this.getCount(TicketType.Infant) > this.getCount(TicketType.Adult)) {
+    if (this.#getCount(TicketType.Infant) > this.#getCount(TicketType.Adult)) {
       throw new InvalidPurchaseException("There must be as many adult seats as there are infant seats requested");
     }
   }
