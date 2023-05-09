@@ -16,7 +16,7 @@ export default class TicketService {
 
   purchaseTickets(accountId, ...ticketTypeRequests) {
     //Assumptions:
-    //1. That ticketTypeRequests is an array of TicketTypeRequest objects.
+    //1. That ticketTypeRequests is an set of TicketTypeRequest objects.
     //    I would favour doing this test in typescript and being explicit about this but the test is javascript
     //2. That the purchase rules outlined in the test apply to all the TicketTypeRequest in the ticketTypeRequests array
     //    as a whole not per request object.
@@ -68,7 +68,8 @@ class SeatReservation {
   }
 
   #buildTicketTypeDetails() {
-    //create a map of ticket type to price and whether it requires a seat, this could be injection or loaded from config but its static for this example
+    //create a map of ticket type to price and whether it requires a seat,
+    //this could be injection or loaded from config but its static for this example
     const ticketTypeDetails = new Map();
     ticketTypeDetails.set(TicketType.Adult, {
       price: 20,
