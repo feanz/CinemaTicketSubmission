@@ -1,6 +1,7 @@
 import InvalidPurchaseException from "./lib/InvalidPurchaseException.js";
 import TicketPaymentService from "../thirdparty/paymentgateway/TicketPaymentService.js";
 import SeatReservationService from "../thirdparty/seatbooking/SeatReservationService.js";
+import TicketTypeRequest from "./lib/TicketTypeRequest.js";
 
 //Ideally this would be used with here and in the TicketTypeRequest as const
 const TicketType = {
@@ -20,6 +21,9 @@ export default class TicketService {
     //    I would favour doing this test in typescript and being explicit about this but the test is javascript
     //2. That the purchase rules outlined in the test apply to all the TicketTypeRequest in the ticketTypeRequests array
     //    as a whole not per request object.
+    //3. The TicketPaymentService and SeatReservationService could be injected i have just new them here so as not to effect
+    //   the contract of the TicketService
+    //4. Only 1 infant can sit on one adults lap so if there are more infants than adults a request is rejected
 
     //create a reservation object that will validate our request and calculate the price and seat count
     var seatReservation = new SeatReservation(accountId, ...ticketTypeRequests);
@@ -38,6 +42,7 @@ export default class TicketService {
 
 class SeatReservation {
   #countByTicketType = new Map();
+  #ticketTypeDetails = this.#buildTicketTypeDetails();
   #price = 0;
   #seatCount = 0;
 
@@ -50,21 +55,13 @@ class SeatReservation {
       throw new InvalidPurchaseException("Must have at least one TicketTypeRequest");
     }
 
-    const ticketTypeDetails = this.#buildTicketTypeDetails();
+    this.#ticketTypeDetails = this.#buildTicketTypeDetails();
     this.#countByTicketType = this.#getCountByTicketType(ticketTypeRequests);
 
-    this.#price = this.#calculatePrice(ticketTypeDetails);
-    this.#seatCount = this.#calculateSeatCount(ticketTypeDetails);
+    this.#price = this.#calculatePrice();
+    this.#seatCount = this.#calculateSeatCount();
 
     this.#validate();
-  }
-
-  getPrice() {
-    return this.#price;
-  }
-
-  getSeatCount() {
-    return this.#seatCount;
   }
 
   #buildTicketTypeDetails() {
@@ -85,6 +82,14 @@ class SeatReservation {
     });
 
     return ticketTypeDetails;
+  }
+
+  getPrice() {
+    return this.#price;
+  }
+
+  getSeatCount() {
+    return this.#seatCount;
   }
 
   #getCountByTicketType(ticketTypeRequests) {
@@ -108,20 +113,20 @@ class SeatReservation {
     return typeCount === undefined ? 0 : typeCount;
   }
 
-  #calculateSeatCount(ticketTypeDetails) {
+  #calculateSeatCount() {
     let seatCount = 0;
     this.#countByTicketType.forEach((count, ticketType) => {
-      if (ticketTypeDetails.get(ticketType).requiresSeat) {
+      if (this.#ticketTypeDetails.get(ticketType).requiresSeat) {
         seatCount += count;
       }
     });
     return seatCount;
   }
 
-  #calculatePrice(ticketTypeDetails) {
+  #calculatePrice() {
     let price = 0;
     this.#countByTicketType.forEach((count, ticketType) => {
-      price += count * ticketTypeDetails.get(ticketType).price;
+      price += count * this.#ticketTypeDetails.get(ticketType).price;
     });
     return price;
   }
